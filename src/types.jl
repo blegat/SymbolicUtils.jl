@@ -292,7 +292,7 @@ function _name_type(x)
         N = length(x.args)-1
         return (name=ntype.name,
                 type=:(Array{$(ntype.type), $N}),
-                array_metadata=:(ArrayShape(Base.Slice.(($(x.args[2:end]...),)))))
+                array_metadata=:(Base.Slice.(($(x.args[2:end]...),))))
     elseif x isa Expr && x.head === :call
         return _name_type(:($x::Number))
     else
