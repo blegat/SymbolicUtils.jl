@@ -69,8 +69,10 @@ function makepattern(expr, keys)
             else
                 :(term($(map(x->makepattern(x, keys), expr.args)...); type=Any))
             end
+        elseif expr.head === :ref
+            :(term(getindex, $(map(x->makepattern(x, keys), expr.args)...); type=Any))
         else
-            error("Unsupported Expr of type $(expr.head) found in pattern")
+            Expr(expr.head, makepattern.(expr.args, (keys,))...)
         end
     else
         # treat as a literal
@@ -311,7 +313,7 @@ function (acr::ACRule)(term)
     else
         f =  operation(term)
         # Assume that the matcher was formed by closing over a term
-        if f != operation(r.lhs) # Maybe offer a fallback if m.term errors. 
+        if f != operation(r.lhs) # Maybe offer a fallback if m.term errors.
             return nothing
         end
 
