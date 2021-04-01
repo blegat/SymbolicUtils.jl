@@ -1,6 +1,6 @@
 module Code
 
-using StaticArrays, LabelledArrays, SparseArrays
+using StaticArrays, LabelledArrays, SparseArrays, LinearAlgebra
 
 export toexpr, Assignment, (←), Let, Func, DestructuredArgs, LiteralExpr,
        SetArray, MakeArray, MakeSparseArray, MakeTuple, AtIndex,
@@ -96,23 +96,39 @@ Base.convert(::Type{Assignment}, p::Pair) = Assignment(pair[1], pair[2])
 
 toexpr(a::Assignment, st) = :($(toexpr(a.lhs, st)) = $(toexpr(a.rhs, st)))
 
-function toexpr(O, st)
-    !istree(O) && return O
-    op = operation(O)
+function_to_expr(op, args, st) = nothing
+
+function function_to_expr(::typeof(^), O, st)
     args = arguments(O)
-    if op === (^) && length(args) == 2 && args[2] isa Number && args[2] < 0
+    if length(args) == 2 && args[2] isa Real && args[2] < 0
         ex = args[1]
         if args[2] == -1
             return toexpr(Term{Any}(inv, [ex]), st)
         else
             return toexpr(Term{Any}(^, [Term{Any}(inv, [ex]), -args[2]]), st)
         end
-    elseif op === (SymbolicUtils.ifelse)
-        return :($(toexpr(args[1], st)) ? $(toexpr(args[2], st)) : $(toexpr(args[3], st)))
-    elseif op isa Sym && haskey(st.symbolify, O)
-        return st.symbolify[O]
     end
-    return Expr(:call, toexpr(op, st), map(x->toexpr(x, st), args)...)
+    return nothing
+end
+
+function function_to_expr(::typeof(SymbolicUtils.ifelse), O, st)
+    args = arguments(O)
+    :($(toexpr(args[1], st)) ? $(toexpr(args[2], st)) : $(toexpr(args[3], st)))
+end
+
+function_to_expr(::Sym, O, st) = get(st.symbolify, O, nothing)
+
+function toexpr(O, st)
+    !istree(O) && return O
+    op = operation(O)
+    expr′ = function_to_expr(op, O, st)
+    if expr′ !== nothing
+        return expr′
+    else
+        haskey(st.symbolify, O) && return st.symbolify[O]
+        args = arguments(O)
+        return Expr(:call, toexpr(op, st), map(x->toexpr(x, st), args)...)
+    end
 end
 
 # Call elements of vector arguments by their name.
@@ -378,6 +394,14 @@ end
     _create_array(A, T, d, elems...)
 end
 
+@inline function create_array(A::Type{<:SubArray{T,N,P,I,L}}, S, d::Val, elems...) where {T,N,P,I,L}
+    create_array(P, S, d, elems...)
+end
+
+@inline function create_array(A::Type{<:PermutedDimsArray{T,N,perm,iperm,P}}, S, d::Val, elems...) where {T,N,perm,iperm,P}
+    create_array(P, S, d, elems...)
+end
+
 ## Matrix
 
 @inline function create_array(::Type{<:Matrix}, ::Nothing, ::Val{dims}, elems...) where dims
@@ -386,6 +410,14 @@ end
 
 @inline function create_array(::Type{<:Matrix}, T, ::Val{dims}, elems...) where dims
     Base.typed_hvcat(T, dims, elems...)
+end
+
+@inline function create_array(A::Type{<:Transpose{T,P}}, S, d::Val, elems...) where {T,P}
+    create_array(P, S, d, elems...)
+end
+
+@inline function create_array(A::Type{<:UpperTriangular{T,P}}, S, d::Val, elems...) where {T,P}
+    create_array(P, S, d, elems...)
 end
 
 ## SArray
