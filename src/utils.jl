@@ -213,3 +213,28 @@ macro matchable(expr)
         Base.length(x::$name) = $(length(fields) + 1)
     end |> esc
 end
+
+
+### OOPS
+
+struct Unknown end
+
+macro oops(ex)
+    quote
+        tmp = $(esc(ex))
+        if tmp === Unknown()
+            return Unknown()
+        else
+            tmp
+        end
+    end
+end
+
+maybe(f, x) = f(@oops x)
+
+function maybefoldl(f, g, xs, acc)
+    for x in xs
+        acc = g(acc, @oops f(x))
+    end
+    return acc
+end
